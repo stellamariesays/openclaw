@@ -9,6 +9,11 @@ import {
   type PluginManifestRecord,
   type PluginManifestRegistry,
 } from "../plugins/manifest-registry.js";
+import {
+  getOfficialExternalPluginCatalogManifest,
+  listOfficialExternalChannelCatalogEntries,
+  resolveOfficialExternalPluginId,
+} from "../plugins/official-external-plugin-catalog.js";
 import { loadPluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.js";
 import { resolveOwningPluginIdsForModelRef } from "../plugins/providers.js";
 import { resolvePluginSetupAutoEnableReasons } from "../plugins/setup-registry.js";
@@ -209,6 +214,21 @@ function getManifestChannelPreferOver(
   return plugin.channelConfigs?.[channelId]?.preferOver ?? [];
 }
 
+function resolveOfficialPluginIdForChannel(channelId: string): string | undefined {
+  const normalized = normalizeOptionalLowercaseString(channelId);
+  if (!normalized) {
+    return undefined;
+  }
+  for (const entry of listOfficialExternalChannelCatalogEntries()) {
+    const manifest = getOfficialExternalPluginCatalogManifest(entry);
+    const entryChannelId = normalizeOptionalLowercaseString(manifest?.channel?.id);
+    if (entryChannelId === normalized) {
+      return resolveOfficialExternalPluginId(entry);
+    }
+  }
+  return undefined;
+}
+
 function collectPluginIdsForConfiguredChannel(
   channelId: string,
   registry: PluginManifestRegistry,
@@ -228,6 +248,13 @@ function collectPluginIdsForConfiguredChannel(
   }
 
   if (claims.length === 0) {
+    // No installed manifest claims — resolve the official plugin ID from the
+    // external catalog (e.g. "wecom" → "wecom-openclaw-plugin") instead of
+    // falling back to the bare channel ID.
+    const officialPluginId = resolveOfficialPluginIdForChannel(normalizedChannelId);
+    if (officialPluginId) {
+      return [officialPluginId];
+    }
     return builtInId ? [builtInId] : [];
   }
 
